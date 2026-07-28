@@ -1,0 +1,58 @@
+@startuml topology
+!include _style.iuml
+!pragma layout smetana
+
+title Edge proxy topology — one stack owns :80/:443; apps meet the proxy, never each other
+
+cloud "Internet" as internet #E7E0F5
+
+frame "VPS (single host)" as vps {
+
+  package "edge-proxy  →  /opt/edge-proxy" as edgestack #DCE9F7 {
+    component "**edge-nginx**\n:80  :443\nTLS termination + host routing" as nginx #DCE9F7
+    component "**edge-certbot**\nrenew loop, every 12h" as certbot #DCE9F7
+    folder "certbot/  (host volume)\nconf = certs, www = ACME webroot\ngitignored — never in this repo" as certs #EEF0F3
+  }
+
+  package "personal-website  →  /opt/personal-website" as pw #DFF0E3 {
+    component "personal-website-frontend\n:80   SPA" as pwfe #DFF0E3
+    component "personal-website-app\n:8080  Spring Boot" as pwapp #DFF0E3
+    database "postgres" as pg
+    database "redis" as redis
+  }
+
+  package "grindtrack  →  /opt/grindtrack" as gt #DFF0E3 {
+    component "grindtrack-app\n:8080  SPA + API" as gtapp #DFF0E3
+    database "grindtrack-db" as gtdb
+  }
+}
+
+internet -[#5B4B8A,thickness=2]-> nginx : **:80 / :443**\nall public traffic
+
+nginx -[#2F6FB5,thickness=2]-> pwfe  : ""edge""\ncaseyrquinn.com
+nginx -[#2F6FB5,thickness=2]-> pwapp : ""edge""\napi.caseyrquinn.com
+nginx -[#2F6FB5,thickness=2]-> gtapp : ""edge""\ntrack.caseyrquinn.com
+
+pwapp -[#6B7280]-> pg    : ""app-network"" (private)
+pwapp -[#6B7280]-> redis : ""app-network"" (private)
+pwfe  -[#6B7280]-> pwapp : ""app-network"" (private)
+gtapp -[#6B7280]-> gtdb  : ""internal"" (private)
+
+certbot -[#6B7280]-> certs : read + write
+nginx   -[#6B7280]-> certs : read-only
+
+note bottom of gt
+  **Why this is the whole point.**
+  The proxy is the only container on ""edge"". Each app keeps a
+  private network for its data tier that the proxy never joins,
+  and the two app stacks share **no** network with each other —
+  so neither can reach the other's containers.
+end note
+
+note bottom of edgestack
+  Anything arriving with a Host/SNI that matches no
+  ""server_name"" hits the ""zz-default-drop.conf"" server
+  and is closed with **444** — no response at all.
+end note
+
+@enduml

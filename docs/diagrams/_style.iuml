@@ -1,0 +1,53 @@
+' Shared styling for every edge-proxy diagram. Included, not rendered on its own.
+'
+' Colour is meaningful and consistent across all diagrams in this folder:
+'   blue    the edge proxy itself (nginx / certbot)
+'   green   application containers
+'   grey    data tier, private networks, host volumes
+'   red     traffic that is dropped, or a step that fails the deploy
+'   purple  off-host: GitHub, the Actions runner, Let's Encrypt
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam roundCorner 6
+skinparam ArrowColor #44506B
+skinparam ArrowFontColor #44506B
+skinparam ArrowFontSize 11
+skinparam TitleFontSize 16
+skinparam TitleFontColor #1B2430
+
+skinparam component {
+  BorderColor #44506B
+  BackgroundColor #FFFFFF
+  FontColor #1B2430
+}
+skinparam package {
+  BorderColor #8894AE
+  BackgroundColor #FFFFFF
+  FontColor #1B2430
+}
+skinparam database {
+  BorderColor #6B7280
+  BackgroundColor #EEF0F3
+  FontColor #1B2430
+}
+skinparam note {
+  BorderColor #C9A227
+  BackgroundColor #FFF8E1
+  FontColor #4A3B00
+  FontSize 11
+}
+skinparam sequence {
+  ParticipantBorderColor #44506B
+  ParticipantFontColor #1B2430
+  LifeLineBorderColor #8894AE
+  ArrowColor #44506B
+  BoxBorderColor #8894AE
+  DividerBackgroundColor #EEF0F3
+  DividerBorderColor #8894AE
+  GroupBackgroundColor #EEF0F3
+  GroupBorderColor #8894AE
+  GroupHeaderFontColor #1B2430
+}

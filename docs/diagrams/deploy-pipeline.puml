@@ -1,0 +1,93 @@
+@startuml deploy-pipeline
+!include _style.iuml
+
+title Deploy pipeline — what actually happens on ""git push origin main""
+
+actor "You\n(laptop)" as dev
+participant "**GitHub**\nrepo + Actions + Secrets" as gh #E7E0F5
+participant "**Runner VM**\nubuntu-latest, ephemeral" as runner #E7E0F5
+participant "**VPS** <font:monospaced>sshd</font>\n:22" as sshd #DCE9F7
+participant "**VPS** shell\n/opt/edge-proxy" as vps #DCE9F7
+participant "**edge-nginx**" as nginx #DCE9F7
+
+autonumber "<b>[0]"
+
+dev -> gh : git push origin main
+activate gh
+gh -> gh : ""on: push: branches: [main]"" matches
+gh -> runner : start a **fresh** VM and run the job
+deactivate gh
+activate runner
+
+gh -> runner : inject secrets as env vars:\nVPS_HOST, VPS_USER, VPS_SSH_KEY
+note right of runner
+  Secrets are decrypted only inside this run, and GitHub
+  masks them in the log. They are **not** available to
+  workflows triggered by a fork's pull request — which is
+  why this job is push-triggered, not PR-triggered.
+end note
+
+runner -> runner : appleboy/ssh-action writes the private key\nto a temp file, chmod 600
+
+runner -> sshd : **SSH connect** — see ssh-key-auth.puml
+activate sshd
+sshd --> runner : authenticated, shell session open
+
+note over runner, vps
+  The runner never uploads any files. It only opens a shell
+  and types commands. The code reaches the VPS because the
+  **VPS pulls it from GitHub itself** in the next step.
+end note
+
+runner -> vps : ""cd /opt/edge-proxy""
+activate vps
+runner -> vps : ""git pull --ff-only""
+vps -> gh : fetch main
+gh --> vps : new commits
+note right of vps
+  ""--ff-only"" refuses to merge. If someone hand-edited a
+  tracked file on the VPS, the pull **fails loudly** instead
+  of creating a merge commit that silently forks the server
+  from the repo. Config drift is the thing this repo exists
+  to prevent, so the deploy should break rather than paper
+  over it.
+end note
+
+runner -> vps : ""docker compose up -d""
+vps -> vps : recreate containers **only** if compose changed\n(conf.d is a bind mount — new files are already visible)
+
+runner -> vps : ""docker compose exec -T nginx nginx -t""
+vps -> nginx : parse and validate the full config
+activate nginx
+
+alt config is valid
+  nginx --> vps : ""syntax is ok / test is successful""
+  runner -> vps : ""docker compose exec -T nginx nginx -s reload""
+  vps -> nginx : SIGHUP
+  nginx -> nginx : start new workers on the new config,\nlet old workers finish in-flight requests
+  note right of nginx
+    A reload is not a restart. No connection is dropped
+    and no TLS listener is ever released.
+  end note
+  nginx --> vps : reloaded — new config live
+  vps --> runner : exit 0
+  runner --> gh : **job green**
+else config is broken
+  nginx -->x vps : ""[emerg] ..."" + non-zero exit
+  vps -->x runner : exit ≠ 0
+  runner -->x gh : **job red — reload never runs**
+  note right of nginx #FFF8E1
+    This ordering is the safety net: a bad config fails the
+    build and is **never** loaded. The proxy keeps serving
+    the last good config, so a typo cannot take the site down.
+  end note
+end
+deactivate nginx
+deactivate vps
+
+runner -> sshd : close session
+deactivate sshd
+runner -> runner : **VM destroyed** — temp key file dies with it
+deactivate runner
+
+@enduml

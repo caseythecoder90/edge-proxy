@@ -27,6 +27,9 @@ only thing that spans them.
    anything else        → 444 (dropped)
 ```
 
+> **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** explains how this works and why
+> it's built this way, with diagrams in [`docs/diagrams/`](docs/diagrams/).
+
 ### Why this exists
 Previously the personal-website stack's nginx owned 80/443 and *also* routed
 grindtrack, and both stacks shared one network. Two problems came from that:
@@ -48,6 +51,8 @@ nginx/conf.d/
   zz-default-drop.conf        unmatched host/SNI   → 444 (loaded last)
 .github/workflows/deploy.yml  push to main → SSH → pull + up -d + nginx -t + reload
 certbot/                      (gitignored) certs + ACME webroot, live on the VPS only
+docs/ARCHITECTURE.md          how it works and why; known gaps
+docs/diagrams/*.puml          topology, request flow, TLS/ACME, deploy, SSH auth
 ```
 Every upstream uses `resolver 127.0.0.11` + a `set $upstream` variable, so an app
 redeploy (new container IP) is picked up **without an nginx reload**.
@@ -70,9 +75,16 @@ docker network ls | grep edge      # confirm it exists
 
 **2. Clone this repo on the VPS and move the certs into it.** The existing certs
 carry over — nothing is re-issued.
+
+> Clone **as the deploy user, not with `sudo`**. `sudo git clone` runs as root, so
+> SSH looks in `/root/.ssh` instead of the deploy user's keys and GitHub answers
+> `Permission denied (publickey)`. The deploy user must own the tree anyway — CI
+> runs `git pull` as that user.
+
 ```bash
-sudo git clone git@github.com:caseythecoder90/edge-proxy.git /opt/edge-proxy
-sudo chown -R $USER:$USER /opt/edge-proxy
+sudo mkdir -p /opt/edge-proxy
+sudo chown "$USER:$USER" /opt/edge-proxy
+git clone git@github.com:caseythecoder90/edge-proxy.git /opt/edge-proxy   # no sudo
 cd /opt/edge-proxy
 mkdir -p certbot
 cp -a /opt/personal-website/certbot/conf certbot/conf   # /etc/letsencrypt (certs)

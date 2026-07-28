@@ -1,0 +1,90 @@
+@startuml ssh-key-auth
+!include _style.iuml
+
+title How the runner proves who it is — SSH public-key authentication
+
+participant "**Client**\n(Actions runner)" as client #E7E0F5
+participant "**Server**\nVPS <font:monospaced>sshd</font> :22" as server #DCE9F7
+
+note across
+  **This is the part that trips everyone up: there are two key pairs, pointing opposite ways.**
+
+  **Host key**  — lives on the VPS. The *server* uses it to prove to the client
+  "I really am this machine". The client remembers it in ""~/.ssh/known_hosts"".
+
+  **User key**  — the pair you made with ""ssh-keygen"". The *client* uses it to prove
+  to the server "I am allowed in as this user".
+end note
+
+== One-time setup (done by hand, once) ==
+
+note over client, server
+  ""ssh-keygen -t ed25519 -C "github-actions-edge-proxy"""
+
+  produces two halves of one pair:
+end note
+
+client -> client : **private half** (""id_ed25519"")\npasted into the GitHub secret **VPS_SSH_KEY**
+server -> server : **public half** (""id_ed25519.pub"")\nappended to ""~/.ssh/authorized_keys"" for VPS_USER
+
+note over client, server #FFF8E1
+  The public half is not a secret — it is safe in a repo, a chat message, a paste bin.
+  The private half is the whole of the credential. Anything holding it can log in as
+  that user. It is stored **encrypted** in GitHub Secrets, decrypted only into a
+  running job's memory, and masked if it is ever echoed to a log.
+end note
+
+== Every connection, from scratch ==
+
+autonumber "<b>[0]"
+
+client -> server : TCP connect :22
+server --> client : ""SSH-2.0-OpenSSH_9.6"" (version banner)
+client --> server : ""SSH-2.0-Go"" (the action's client)
+
+client <-> server : negotiate algorithms, then **key exchange**\n(ECDH — both sides derive the same session key,\nwithout that key ever crossing the wire)
+
+server --> client : **host key** + a signature over the exchange hash
+client -> client : is this host key in ""known_hosts""?
+note right of client
+  On a normal laptop this is the
+  "authenticity of host ... can't be established" prompt.
+
+  ""appleboy/ssh-action"" skips this check unless you pass
+  ""fingerprint:"". Not verifying it means a machine that
+  could intercept traffic to your VPS could impersonate it
+  and collect the commands — it cannot, however, obtain
+  your private key (see step 8).
+end note
+
+== everything below this line is encrypted ==
+
+client -> server : ""userauth"" request: user = VPS_USER, method = **publickey**\n+ the **public** half, as a question: "would this be accepted?"
+activate server
+server -> server : look up ""~/.ssh/authorized_keys"" for that user\n→ is this exact public key listed?
+server --> client : yes, that key is authorised — now prove you hold its private half
+deactivate server
+
+client -> client : build a challenge buffer:\n**session ID** + user + service + the public key\nthen **sign it with the private key**
+note right of client
+  The private key **never leaves the client** — not on the
+  first connection, not ever. Only a signature crosses the
+  wire, and because the buffer includes the session ID
+  (unique per connection), that signature cannot be
+  replayed against any other session.
+
+  This is why SSH keys beat passwords: a password is sent to
+  the server, so a hostile server learns it. A key signature
+  proves possession without revealing the thing possessed.
+end note
+client -> server : signature
+
+activate server
+server -> server : verify the signature using the **public** key\nalready sitting in ""authorized_keys""
+server --> client : ""SSH_MSG_USERAUTH_SUCCESS""
+deactivate server
+
+client -> server : open a session channel; run the deploy script
+server --> client : stdout / stderr, then the **exit status**\n(non-zero here is what turns the job red)
+
+@enduml

@@ -1,0 +1,85 @@
+@startuml request-flow
+!include _style.iuml
+
+title Life of a request — https://track.caseyrquinn.com/workouts
+
+actor "Browser" as client
+participant "**edge-nginx**\n:80 / :443" as nginx #DCE9F7
+participant "Docker DNS\n127.0.0.11" as dns #EEF0F3
+participant "**grindtrack-app**\n:8080" as app #DFF0E3
+
+autonumber "<b>[0]"
+
+client -> client : DNS: track.caseyrquinn.com → VPS public IP
+note right of client
+  Every hostname here resolves to the **same** IP.
+  Nothing in DNS says which app answers — that is
+  decided entirely by the ""Host"" header / TLS SNI.
+end note
+
+== Plain HTTP on :80 is only ever a doorway ==
+
+client -> nginx : GET http://track.caseyrquinn.com/workouts
+activate nginx
+alt path starts with /.well-known/acme-challenge/
+  nginx --> client : 200 — file served from /var/www/certbot\n(this is how Let's Encrypt proves domain control)
+else anything else
+  nginx --> client : **301** → https://track.caseyrquinn.com/workouts
+end
+deactivate nginx
+
+== TLS on :443 ==
+
+client -> nginx : TCP connect :443, then TLS ClientHello\n**SNI = track.caseyrquinn.com**
+activate nginx
+note right of nginx
+  SNI travels in the **clear**, before any encryption exists.
+  It has to — nginx must know which certificate to present
+  before it can decrypt anything.
+end note
+nginx -> nginx : match SNI against each ""server_name""\n→ track.conf's :443 block
+nginx --> client : certificate for track.caseyrquinn.com\n(/etc/letsencrypt/live/track.../fullchain.pem)
+client <-> nginx : finish handshake — TLS 1.2/1.3, session encrypted
+
+== HTTP request, now inside TLS ==
+
+client -> nginx : GET /workouts\nHost: track.caseyrquinn.com
+nginx -> nginx : match ""Host"" against ""server_name"" again\n(SNI and Host are separate — both are checked)
+
+nginx -> dns : resolve **grindtrack-app**
+activate dns
+dns --> nginx : 172.x.x.x  (cached for ""valid=30s"")
+deactivate dns
+note right of nginx
+  This lookup happens **per request** because the upstream is
+  held in a variable (""set $upstream""). A plain literal in
+  ""proxy_pass"" would be resolved once at startup and pinned —
+  an app redeploy would then 502 until nginx was reloaded.
+
+  It resolves the **unique container name**, never the ""app""
+  service alias: two stacks both register ""app"" on ""edge"",
+  and Docker DNS would round-robin between them.
+end note
+
+nginx -> app : GET /workouts over the ""edge"" network\nHost, X-Real-IP, X-Forwarded-Proto: https\n**X-Forwarded-For: <client IP>  (overwritten)**
+activate app
+note right of nginx
+  For grindtrack the XFF header is **set**, not appended.
+  Its login rate limiter keys on the first entry, so if the
+  client's own ""X-Forwarded-For"" were preserved, an attacker
+  could inject a fake earlier hop and rotate past the limiter.
+end note
+app --> nginx : 200 + body
+deactivate app
+nginx --> client : 200, re-encrypted, plus HSTS /\nX-Frame-Options / nosniff headers
+deactivate nginx
+
+== The unmatched case ==
+
+client -> nginx : request with Host/SNI matching nothing\n(direct-IP probe, spoofed Host, stale DNS)
+activate nginx
+nginx -> nginx : falls through to ""zz-default-drop.conf""\n(""default_server"", loaded last — ""zz-"" prefix)
+nginx -->x client : **444** — connection closed, no response
+deactivate nginx
+
+@enduml

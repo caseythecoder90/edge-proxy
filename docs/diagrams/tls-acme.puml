@@ -1,0 +1,83 @@
+@startuml tls-acme
+!include _style.iuml
+
+title How certificates are issued and renewed (ACME HTTP-01)
+
+participant "**edge-certbot**" as certbot #DCE9F7
+participant "certbot/www\n(shared volume)" as webroot #EEF0F3
+participant "certbot/conf\n= /etc/letsencrypt" as confdir #EEF0F3
+participant "**edge-nginx**" as nginx #DCE9F7
+participant "Let's Encrypt" as le #E7E0F5
+
+note over certbot
+  The container runs a loop, not a cron job:
+  ""while :; do certbot renew; sleep 12h; done""
+  ""certbot renew"" is a no-op until a cert is
+  inside 30 days of expiry, so it is safe to
+  run twice a day forever.
+end note
+
+autonumber "<b>[0]"
+
+certbot -> le : renew request for track.caseyrquinn.com
+activate le
+le --> certbot : challenge token
+deactivate le
+
+certbot -> webroot : write token to\n/var/www/certbot/.well-known/acme-challenge/<token>
+activate webroot
+
+le -> nginx : GET http://track.caseyrquinn.com/.well-known/acme-challenge/<token>\n**over plain :80**
+activate nginx
+note right of nginx
+  This is exactly why every :80 block carries
+
+  ""location /.well-known/acme-challenge/ { root /var/www/certbot; }""
+
+  **before** the catch-all 301. If that redirect came first,
+  the challenge would bounce to HTTPS and renewal would fail —
+  the classic way a proxy locks itself out of its own certs.
+end note
+nginx -> webroot : read token from the same volume
+webroot --> nginx : token
+deactivate webroot
+nginx --> le : 200 + token
+deactivate nginx
+
+le -> le : token matches → domain control proven
+le --> certbot : new fullchain.pem + privkey.pem
+certbot -> confdir : write to /etc/letsencrypt/live/track.caseyrquinn.com/
+activate confdir
+
+note over nginx, confdir #FFF8E1
+  **The renewal is on disk, but not yet in use.** nginx mounts
+  ""certbot/conf"" read-only and reads certificates into memory at
+  start / reload. certbot cannot signal it, so a renewed cert is
+  **not** served until something reloads nginx.
+
+  Relying on a push to ""main"" for that would mean a quiet repo
+  serves an expired cert, so nginx reloads itself on a timer —
+  see the next step.
+end note
+deactivate confdir
+
+... up to 6h later ...
+
+nginx -> nginx : ""nginx -s reload"" from its own 6h loop\n(""command:"" in docker-compose.yml)
+activate nginx
+nginx -> confdir : re-read certificates from disk
+activate confdir
+confdir --> nginx : renewed fullchain.pem + privkey.pem
+deactivate confdir
+nginx -> nginx : new workers serve the new cert,\nold workers finish in-flight requests
+deactivate nginx
+
+note over nginx #FFF8E1
+  A reload is not a restart — no connection is dropped and
+  the :443 listener is never released. Six hours is well
+  inside the 30-day renewal window.
+
+  See docs/ARCHITECTURE.md → "Why nginx reloads itself every six hours".
+end note
+
+@enduml
