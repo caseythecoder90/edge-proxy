@@ -76,21 +76,42 @@ docker network ls | grep edge      # confirm it exists
 **2. Clone this repo on the VPS and move the certs into it.** The existing certs
 carry over — nothing is re-issued.
 
-> Clone **as the deploy user, not with `sudo`**. `sudo git clone` runs as root, so
-> SSH looks in `/root/.ssh` instead of the deploy user's keys and GitHub answers
-> `Permission denied (publickey)`. The deploy user must own the tree anyway — CI
-> runs `git pull` as that user.
+> **The repo must end up owned by the deploy user**, because CI runs
+> `git pull --ff-only` as that user. Create the directory with `sudo`, hand it
+> over, then clone *without* `sudo`.
+>
+> `sudo git clone git@github.com:...` fails with `Permission denied (publickey)`:
+> it runs as root, so SSH looks in `/root/.ssh` rather than the deploy user's
+> keys. HTTPS avoids SSH entirely and works anonymously while this repo is
+> public — switch to the SSH URL if it ever goes private.
 
 ```bash
 sudo mkdir -p /opt/edge-proxy
 sudo chown "$USER:$USER" /opt/edge-proxy
-git clone git@github.com:caseythecoder90/edge-proxy.git /opt/edge-proxy   # no sudo
+git clone https://github.com/caseythecoder90/edge-proxy.git /opt/edge-proxy   # no sudo
 cd /opt/edge-proxy
-mkdir -p certbot
-cp -a /opt/personal-website/certbot/conf certbot/conf   # /etc/letsencrypt (certs)
-cp -a /opt/personal-website/certbot/www  certbot/www    # ACME webroot
-ls certbot/conf/live                                    # expect api. , caseyrquinn.com , track.
 ```
+
+Now copy the certs over. **One command, with `sudo`, into a `certbot` path that
+does not exist yet** — the two traps below are easy to hit and produce a
+convincingly wrong result rather than an error:
+
+```bash
+sudo cp -a /opt/personal-website/certbot ./certbot   # brings conf/ AND www/
+sudo ls certbot/conf/live                            # expect api. , caseyrquinn.com , track.
+```
+
+> **Why `sudo` on both lines.** certbot keeps `conf/live`, `conf/archive` and
+> `conf/accounts` as `drwx------ root root` because they hold private keys. Without
+> `sudo`, `cp` silently creates *empty* copies of those directories and `ls` shows
+> nothing — which looks exactly like a wrong path. Leave the copies root-owned;
+> the containers run as root and read them fine, and a `chown -R` here would strip
+> that protection off your private keys.
+>
+> **Why one command into a fresh path.** `cp -a A B` copies A *to* B when B does
+> not exist, but *into* B when it does. Running the copy twice therefore yields
+> `certbot/conf/conf`, leaving the original empty shell in place. If that has
+> already happened: `sudo rm -rf certbot` and re-run the copy.
 
 **3. Put the apps on `edge`** (each app keeps its private net for its data tier).
 - **grindtrack** already declares `web: { external: true, name: edge }` and puts
