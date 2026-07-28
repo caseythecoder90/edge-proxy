@@ -1,0 +1,35 @@
+# Standalone edge reverse proxy for the VPS. This stack alone owns :80/:443 and
+# TLS for every domain, and routes by hostname to each app over the shared
+# external `edge` network. Apps never share a network with each other — only
+# with this proxy — so one app can't reach another's containers.
+#
+# One-time host setup:  docker network create edge
+# Full cutover + maintenance runbook: see README.md
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: edge-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    restart: unless-stopped
+    networks:
+      - edge
+
+  certbot:
+    image: certbot/certbot
+    container_name: edge-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    # Renew loop; nginx serves the ACME HTTP-01 challenge from the shared webroot.
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+networks:
+  edge:
+    external: true
+    name: edge

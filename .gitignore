@@ -1,0 +1,8 @@
+# TLS certs + ACME state live on the VPS only — private keys, never committed.
+certbot/
+
+# Local env, if any.
+.env
+
+# IDE
+.idea/

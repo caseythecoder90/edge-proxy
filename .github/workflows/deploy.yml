@@ -1,0 +1,25 @@
+name: Deploy edge-proxy
+
+# Config-only stack (no image build). On push to main, pull on the VPS, apply
+# any compose change, validate the nginx config, and hot-reload it. A bad
+# config fails `nginx -t` here (deploy goes red) and is never reloaded live.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/edge-proxy
+            git pull --ff-only
+            docker compose up -d
+            docker compose exec -T nginx nginx -t
+            docker compose exec -T nginx nginx -s reload
