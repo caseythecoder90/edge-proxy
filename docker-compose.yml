@@ -19,6 +19,14 @@ services:
     restart: unless-stopped
     networks:
       - edge
+    # nginx reads certificates into memory at start/reload, so a certbot renewal
+    # on disk is invisible until something reloads it. Reload every 6h so renewals
+    # are picked up regardless of whether anyone pushes to main. `exec` keeps nginx
+    # as PID 1 so `docker stop` still shuts it down gracefully; `sleep & wait` keeps
+    # the loop interruptible by SIGTERM. `$${!}` escapes Compose interpolation.
+    command: >
+      /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done
+      & exec nginx -g "daemon off;"'
 
   certbot:
     image: certbot/certbot
@@ -26,6 +34,9 @@ services:
     volumes:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
+    # Without this, a host reboot brings nginx back (it has a policy) but not
+    # certbot, and renewals stop silently until a cert expires.
+    restart: unless-stopped
     # Renew loop; nginx serves the ACME HTTP-01 challenge from the shared webroot.
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
