@@ -181,3 +181,11 @@ In `personal-website-backend/docker-compose.prod.yml`:
 
 The `nginx/conf.d/*` and `certbot/` in that repo become dead once cut over — the
 server blocks now live in this repo's `nginx/conf.d/`.
+---
+
+## Also in this repo: [`linux-migration/`](linux-migration/)
+
+Unrelated to the proxy. A complete, step-by-step guide for moving the ThinkPad
+from Windows to Fedora Linux, with a 12-week Linux + Kubernetes learning path.
+Start at [`linux-migration/README.md`](linux-migration/README.md), or jump to the
+[one-page checklist](linux-migration/checklist.md).
