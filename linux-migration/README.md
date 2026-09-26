@@ -17,6 +17,20 @@ and Kubernetes.
 
 ---
 
+## Before anything else: what you need to have
+
+| | Required? | Notes |
+| --- | --- | --- |
+| **A USB stick, 8 GB or larger** | **Yes** | Non-negotiable. You cannot install an OS onto the disk you're currently booted from — the installer has to boot from somewhere else. Any cheap stick. It gets erased. |
+| **Somewhere to put your backup** | **Yes** | An external drive, or cloud storage with room for your whole user profile. |
+| **A second USB stick, 32 GB** | Recommended | For a Windows 11 recovery drive. This is your rollback if you change your mind — about 90 minutes back to Windows. Skip only if you're certain. |
+| **AC power** | Yes | Don't install on battery. |
+| **An evening, and a spare day after it** | Yes | Not the night before you need the laptop for work. |
+
+Nothing else. No second computer, no network boot setup, no paid software.
+
+---
+
 ## Read this part first
 
 There is exactly one rule in this guide:
