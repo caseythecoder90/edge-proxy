@@ -194,11 +194,26 @@ while you're in Windows, collect:
   `.cloud.com` Workspace URL). Copy it out of the Citrix Workspace app:
   ⚙ → *Accounts*.
 - Whether login is **username+password**, **SAML/SSO in a browser**, or **smart card**.
-- Your company's **internal CA certificate**, if they use one. In Windows:
-  `certlm.msc` → Trusted Root Certification Authorities → find your company's root →
-  right-click → All Tasks → Export → **Base-64 encoded X.509 (.CER)**. Save it to
-  the external drive as `company-root-ca.pem`. This file is the difference between
-  "Citrix works" and "SSL error 61" on Linux.
+- Your company's **CA certificate chain**. Don't hunt through the certificate
+  store guessing which of ~50 roots is yours — pull the chain straight off your
+  StoreFront URL, which by definition gives you the right one:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\export-citrix-ca.ps1 `
+      -StoreFrontUrl https://vdi.company.com -OutDir E:\thinkpad-backup\certs
+  ```
+
+  [`scripts/export-citrix-ca.ps1`](scripts/export-citrix-ca.ps1) writes each
+  certificate in the chain to its own PEM file and labels which are the root and
+  intermediates. **Run it from the same network you'll use the VDI from** — if your
+  employer does TLS inspection, the chain differs between the office and your home
+  connection, and you want the one you'll actually meet.
+
+  These files are the difference between "Citrix works" and "SSL error 61" on Linux.
+  Manual fallback if the script can't reach the host: open the StoreFront URL in
+  Chrome → padlock → *Connection is secure* → *Certificate is valid* →
+  **Details** tab → *Certification Path* → select the **top** entry →
+  *View Certificate* → *Details* → **Copy to File** → *Base-64 encoded X.509*.
 - A note of whether the StoreFront page offers **"use light version"/HTML5** — that's
   your browser-based fallback and it works on any OS.
 

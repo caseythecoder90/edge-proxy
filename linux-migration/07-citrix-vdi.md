@@ -107,13 +107,20 @@ If your company terminates TLS with an internal CA (most do), Citrix will fail w
 **"SSL error 61: You have not chosen to trust <CA name>"**. The Workspace app keeps
 its *own* certificate store; adding the CA to the system trust store is not enough.
 
-Copy the `company-root-ca.pem` you exported on page 01 onto the live machine (USB
-stick, or re-export from a browser), then:
+Copy the PEM files you exported on page 01 (with
+[`scripts/export-citrix-ca.ps1`](scripts/export-citrix-ca.ps1)) onto the live
+machine, then:
 
 ```bash
-sudo cp company-root-ca.pem /opt/Citrix/ICAClient/keystore/cacerts/
+# Every cert from the chain EXCEPT the leaf/server cert, as separate files
+sudo cp *.pem /opt/Citrix/ICAClient/keystore/cacerts/
 sudo /opt/Citrix/ICAClient/util/ctx_rehash
 ```
+
+> **Separate files, not one concatenated bundle.** `ctx_rehash` indexes only the
+> first certificate in a file, so a bundle silently loses everything after the
+> first one. If the PEMs came off Windows with CRLF line endings and OpenSSL
+> complains, `sed -i 's/\r$//' *.pem` first.
 
 `ctx_rehash` regenerates the hash-named symlinks OpenSSL uses to find certificates
 by subject hash. Without it the file is invisible to the client.
