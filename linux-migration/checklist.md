@@ -43,6 +43,8 @@ Open this on your phone. Everything here is expanded elsewhere in the guide.
 
 ## 🚦 THE GATE — [07 Part A](07-citrix-vdi.md)
 
+- [ ] **Confirmed you can log in WITHOUT any device-bound credential**<br>A passkey in Windows Hello dies with the wipe. Prove the password+token or phone route works *today*.
+- [ ] Checked whether the gateway runs an endpoint/posture scan (Windows-only plugins block Linux)
 - [ ] HTML5 receiver tested from Windows (your floor)
 - [ ] Booted Fedora live USB → **Try Fedora**
 - [ ] Hardware checked: Wi-Fi, audio, trackpad, TrackPoint, keys, webcam, suspend

@@ -36,6 +36,53 @@ usable.
 If your company's StoreFront doesn't offer it, that's not fatal — it just means the
 native client test below is now load-bearing.
 
+## Test 1b: can you still log in after the wipe? (5 minutes, do this first)
+
+Modern enterprise logins increasingly use credentials that are **bound to the
+device you registered them on**. A wipe destroys those. This is a faster way to
+lock yourself out of work than any certificate problem.
+
+Look at what your login page offers and sort it into two columns:
+
+| Survives a wipe | Does **not** survive a wipe |
+| --- | --- |
+| Password + a hardware/RSA token | A passkey stored in Windows Hello or this machine's TPM |
+| A QR code scanned by an app on your phone | A certificate issued to this Windows install |
+| A passkey on a phone or a portable security key (YubiKey) | A browser-resident passkey in this Windows profile |
+| SMS / authenticator codes | A Windows-only MFA client |
+
+**Then prove it, don't assume it.** Sign out, and sign back in using a method from
+the left column. If your usual route is a passkey, go into your identity
+provider's device-management page (often linked from the login screen as
+"manage devices" or similar) and check what is actually registered to this
+laptop. Register a phone or a portable key *before* you wipe if the left column
+turns out to be empty.
+
+## Test 1c: does your employer's login flow work outside a Windows browser?
+
+Two mechanisms commonly block a Linux client even when the client itself is fine:
+
+**Federated / SSO login rendered in an embedded browser.** The Linux Workspace
+app shows SAML and OIDC login pages in an embedded WebKitGTK browser rather than
+your real browser. Simple form logins (username, password, token code) render
+fine. **WebAuthn and passkeys often do not**, because the embedded browser may
+not expose the platform authenticator API. Newer versions of the Workspace app
+can hand authentication off to the system browser instead — if yours offers that,
+turn it on, since passkeys work normally in real Firefox or Chrome. Either way,
+plan to use the form-based fallback for the gate test, and treat passkey support
+as a bonus to verify afterwards.
+
+**Endpoint analysis / device posture scans.** Some gateways run a compliance
+check (NetScaler EPA, Citrix Device Posture, or a third-party posture agent)
+before admitting you, verifying antivirus, disk encryption or patch level. These
+plugins frequently ship for Windows and macOS only, and a Linux client simply
+fails the scan with an unhelpful message. There is no client-side workaround —
+if you hit this, it is a conversation with IT, and it's the single most likely
+reason a well-supported Linux client still can't get you in.
+
+Both of these are exactly what the live-USB test catches, which is why the test
+is worth 30 minutes.
+
 ## Test 2: the native client from a Fedora live USB (30 minutes)
 
 This is the real test. You'll run Fedora entirely from RAM without touching your
@@ -103,9 +150,18 @@ browser used by SAML/SSO logins), and `krb5-libs` for Kerberos.
 
 ### Install your company's root CA — this is the step everyone misses
 
-If your company terminates TLS with an internal CA (most do), Citrix will fail with
-**"SSL error 61: You have not chosen to trust <CA name>"**. The Workspace app keeps
-its *own* certificate store; adding the CA to the system trust store is not enough.
+**First, check whether this applies to you at all.** If your StoreFront is a
+public internet hostname, its certificate almost certainly chains to a public CA
+that the Workspace app already trusts, and you can skip this section. Run
+[`scripts/export-citrix-ca.ps1`](scripts/export-citrix-ca.ps1) and look at the
+root it reports: a public CA (DigiCert, Entrust, Sectigo, GlobalSign, Amazon)
+means nothing to do here.
+
+It applies when your employer terminates TLS with an **internal** CA — an
+internal-only StoreFront, or a corporate network doing TLS inspection. Then
+Citrix fails with **"SSL error 61: You have not chosen to trust <CA name>"**. The
+Workspace app keeps its *own* certificate store; adding the CA to the system
+trust store is not enough.
 
 Copy the PEM files you exported on page 01 (with
 [`scripts/export-citrix-ca.ps1`](scripts/export-citrix-ca.ps1)) onto the live
